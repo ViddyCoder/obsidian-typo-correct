@@ -1,5 +1,5 @@
 import { Plugin, Notice, Editor, EditorPosition, App, PluginSettingTab, Setting } from "obsidian";
-import nspell from "nspell";
+const nspell = require("nspell");
 
 interface MisspellSettings {
   lang: string;
@@ -151,6 +151,24 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
     return { newFrom, newTo, cleaned };
   }
 
+  isLetter = (c: string) => /[A-Za-z]/.test(c);
+  private trySwapFix(word: string): string {
+    // Adjacent swaps first (fast path)
+    const arr = word.split("");
+    for (let i = 0; i < arr.length - 1; i++) {
+      if (!this.isLetter(arr[i]) || !this.isLetter(arr[i + 1])) continue;
+      if (arr[i] === arr[i + 1]) continue; // swapping identical letters is a no-op
+      // swap i, i+1
+      [arr[i], arr[i + 1]] = [arr[i + 1], arr[i]];
+      const cand = arr.join("");
+      if (!this.isMisspelled(cand)) return cand;
+      // swap back to continue
+      [arr[i], arr[i + 1]] = [arr[i + 1], arr[i]];
+    }
+    
+    return "";
+  }
+
   // --- Core behaviors ---
 
   private async handleCtrlL(editor: Editor) {
@@ -162,15 +180,25 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
     if (selectedText && selectedText.trim()) {
       const { newFrom, newTo, cleaned } = this.trimSelectionToWord(editor, selectedText, from, to);
       if (cleaned && this.isMisspelled(cleaned)) {
-        // Try to replace with first suggestion
-        const suggestions: string[] = this.nspell?.suggest(this.stripEdgePunct(cleaned)) ?? [];
+
+        let suggestions: string[] = [];
+        const fix = this.trySwapFix(cleaned);
+
+        if (fix) {
+          suggestions.push(fix);
+        }
+        else {
+          // Try to replace with first suggestion
+          suggestions = this.nspell?.suggest(this.stripEdgePunct(cleaned)) ?? [];
+        }
+
         if (suggestions.length > 0) {
           const s0 = this.preserveCase(suggestions[0], cleaned);
           // Replace and keep the suggestion selected
           editor.setSelection(newFrom, newTo);
           editor.replaceSelection(s0);
           const after: EditorPosition = { line: newFrom.line, ch: newFrom.ch + s0.length };
-		  editor.setSelection(newFrom, after);
+		      editor.setSelection(newFrom, after);
           try {
             // @ts-ignore
             editor.scrollIntoView({ from: newFrom, to: after }, true);
@@ -219,7 +247,7 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
       const norm = this.normalizeForSet(word);
       if (this.customSet.has(norm) || this.tempIgnore.has(norm)) continue;
 
-      const ok = this.nspell.check(word);
+      const ok = this.nspell.correct(word);
       if (!ok) {
         const from = offsetToPos(match.index);
         const to = offsetToPos(match.index + word.length);
