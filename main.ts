@@ -169,6 +169,19 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
     return "";
   }
 
+  private tryApostrophes(word: string): string {
+    const arr = word.split("");
+
+    for (let i = 1; i < word.length; i++) {
+      const candidate = word.slice(0, i) + "'" + word.slice(i);
+      if (this.nspell.correct(candidate)) {
+        return candidate;
+      }
+    }
+
+    return "";
+  }
+
   // --- Core behaviors ---
 
   private async handleCtrlL(editor: Editor) {
@@ -182,12 +195,15 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
       if (cleaned && this.isMisspelled(cleaned)) {
 
         let suggestions: string[] = [];
-        const fix = this.trySwapFix(cleaned);
+        
+        let fix = this.trySwapFix(cleaned);
+        if (fix) suggestions.unshift(fix);
+        
+        fix = this.tryApostrophes(cleaned);
+        if (fix) suggestions.unshift(fix);
 
-        if (fix) {
-          suggestions.push(fix);
-        }
-        else {
+
+        if (suggestions.length === 0) {
           // Try to replace with first suggestion
           suggestions = this.nspell?.suggest(this.stripEdgePunct(cleaned)) ?? [];
         }
