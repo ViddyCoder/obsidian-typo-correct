@@ -16,13 +16,15 @@ const DEFAULT_SETTINGS: MisspellSettings = {
 export default class TypoFirstMisspellingPlugin extends Plugin {
   private nspell: any | null = null;
   public customSet: Set<string> = new Set();
+  public customSetWithUppers: Set<string> = new Set();
+  public customMap: Map<string, string> = new Map();
   private tempIgnore: Set<string> = new Set(); // cleared when paragraph has no remaining misspellings
   settings: MisspellSettings = { ...DEFAULT_SETTINGS };
 
   async onload() {
     await this.loadSettings();
-    this.customSet = new Set(this.settings.customWords.map(w => w.toLowerCase().trim()).filter(Boolean));
     await this.loadDictionary(this.settings.lang);
+    this.reloadCustomSets();
 
     // Ctrl+L: smart action (select first misspelling OR act on current misspelling)
     this.addCommand({
@@ -36,7 +38,7 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
     this.addCommand({
       id: "add-selected-word-to-custom-dictionary",
       name: "Add selected word to custom dictionary",
-      hotkeys: [{ modifiers: ["Alt"], key: ";" }],
+      hotkeys: [{ modifiers: ["Alt"], key: "n" }],
       editorCallback: (editor) => this.addSelectedToCustom(editor),
     });
 
@@ -67,6 +69,12 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
     }
   }
 
+  private reloadCustomSets() {
+    this.customSet = new Set(this.settings.customWords.filter(w => w === w.toLocaleLowerCase()));
+    this.customSetWithUppers = new Set(this.settings.customWords.filter(w => w !== w.toLocaleLowerCase()));
+    this.customMap = new Map(Array.from(this.customSetWithUppers, (w) => [w.toLowerCase(), w]));
+  }
+
   // --- Helpers ---
 
   private stripEdgePunct(raw: string): string {
@@ -89,7 +97,7 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
     if (!this.nspell) return false;
     const clean = this.stripEdgePunct(word);
     if (!clean) return false;
-    if (this.isCustom(clean) || this.isTempIgnored(clean)) return false;
+    if (this.isCustom(clean) || this.customSetWithUppers.has(word) || this.isTempIgnored(clean)) return false;
     return !this.nspell.correct(clean);
   }
 
@@ -179,6 +187,11 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
     return "";
   }
 
+  private tryCustomWordsWithUppers(word: string): string {
+    let suggestion = this.customMap.get(word.toLowerCase());
+    return suggestion ? suggestion : "";
+  }
+
   // --- Core behaviors ---
 
   private async handleCtrlL(editor: Editor) {
@@ -190,13 +203,15 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
     if (selectedText && selectedText.trim()) {
       const { newFrom, newTo, cleaned } = this.trimSelectionToWord(editor, selectedText, from, to);
       if (cleaned && this.isMisspelled(cleaned)) {
-
         let suggestions: string[] = [];
         
         let fix = this.trySwapFix(cleaned);
         if (fix) suggestions.unshift(fix);
         
         fix = this.tryApostrophes(cleaned);
+        if (fix) suggestions.unshift(fix);
+
+        fix = this.tryCustomWordsWithUppers(cleaned);
         if (fix) suggestions.unshift(fix);
 
         if (suggestions.length === 0) {
@@ -261,7 +276,7 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
       if (/\d/.test(word)) continue;
 
       const norm = this.normalizeForSet(word);
-      if (this.customSet.has(norm) || this.tempIgnore.has(norm)) continue;
+      if (this.customSet.has(norm) || this.customSetWithUppers.has(word) || this.tempIgnore.has(norm)) continue;
 
       const ok = this.nspell.correct(word);
       if (!ok) {
@@ -301,13 +316,14 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
       new Notice("That selection doesn't look like a word.");
       return;
     }
-    if (this.customSet.has(norm)) {
+    if (this.customSet.has(norm) || this.customSetWithUppers.has(cleaned)) {
       new Notice(`"${cleaned}" is already in your custom dictionary.`);
       return;
     }
 
-    this.customSet.add(norm);
-    this.settings.customWords.push(norm);
+    // this.customSet.add(norm);
+    this.settings.customWords.push(cleaned);
+    this.reloadCustomSets();
     await this.saveSettings();
     new Notice(`Added "${cleaned}" to custom dictionary.`);
   }
@@ -380,7 +396,7 @@ class MisspellSettingTab extends PluginSettingTab {
     saveBtn.addEventListener("click", async () => {
       const words = ta.value
         .split(/\r?\n/)
-        .map((w) => w.toLowerCase().trim())
+        //.map((w) => w.toLowerCase().trim())
         .filter(Boolean);
       this.plugin.settings.customWords = Array.from(new Set(words));
       this.plugin.customSet = new Set(this.plugin.settings.customWords);
