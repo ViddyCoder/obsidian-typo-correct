@@ -38,8 +38,15 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
     this.addCommand({
       id: "add-selected-word-to-custom-dictionary",
       name: "Add selected word to custom dictionary",
-      hotkeys: [{ modifiers: ["Alt"], key: "n" }],
+      hotkeys: [{ modifiers: ["Alt"], key: "h" }],
       editorCallback: (editor) => this.addSelectedToCustom(editor),
+    });
+
+    this.addCommand({
+      id: "remove-selected-word-from-custom-dictionary",
+      name: "Remove selected word from custom dictionary",
+      hotkeys: [{ modifiers: ["Alt", "Shift"], key: "h" }],
+      editorCallback: (editor) => this.removeSelectedFromCustom(editor),
     });
 
     this.addSettingTab(new MisspellSettingTab(this.app, this));
@@ -326,6 +333,38 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
     this.reloadCustomSets();
     await this.saveSettings();
     new Notice(`Added "${cleaned}" to custom dictionary.`);
+  }
+
+  private async removeSelectedFromCustom(editor: Editor) {
+    const sel = editor.getSelection();
+    if (!sel || !sel.trim()) {
+      new Notice("Select a word, then press Ctrl+Shift+H to remove it.");
+      return;
+    }
+
+    // Trim edge punctuation and normalize to lowercase key
+    const cleaned = sel.replace(/^[^A-Za-z'-]+|[^A-Za-z'-]+$/g, "");
+
+    if (!cleaned) {
+      new Notice("That selection doesn't look like a word.");
+      return;
+    }
+
+    const existing = this.customSet.has(cleaned) || this.customSetWithUppers.has(cleaned);
+
+    if (!existing) {
+      new Notice(`"${cleaned}" is not in your custom dictionary.`);
+      return;
+    }
+
+    // Remove from settings.customWords
+    const list = Array.isArray(this.settings.customWords) ? this.settings.customWords : [];
+    this.settings.customWords = list.filter(w => w !== cleaned);
+
+    await this.saveSettings();
+    this.reloadCustomSets();
+
+    new Notice(`Removed "${cleaned}" from custom dictionary.`);
   }
 
   // --- Settings persistence ---
