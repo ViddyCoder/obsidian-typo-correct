@@ -1,1 +1,1 @@
-declare module "typo-js";
+declare module "nspell";

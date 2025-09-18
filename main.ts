@@ -1,5 +1,5 @@
 import { Plugin, Notice, Editor, EditorPosition, App, PluginSettingTab, Setting } from "obsidian";
-import Typo from "typo-js";
+import nspell from "nspell";
 
 interface MisspellSettings {
   lang: string;
@@ -14,7 +14,7 @@ const DEFAULT_SETTINGS: MisspellSettings = {
 };
 
 export default class TypoFirstMisspellingPlugin extends Plugin {
-  private typo: any | null = null;
+  private nspell: any | null = null;
   public customSet: Set<string> = new Set();
   private tempIgnore: Set<string> = new Set(); // cleared when paragraph has no remaining misspellings
   settings: MisspellSettings = { ...DEFAULT_SETTINGS };
@@ -27,7 +27,7 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
     // Ctrl+L: smart action (select first misspelling OR act on current misspelling)
     this.addCommand({
       id: "smart-misspelling-action",
-      name: "Misspelling: select/replace/skip (Ctrl+L)",
+      name: "Misspelling: select/replace/skip",
       hotkeys: [{ modifiers: ["Alt"], key: "j" }],
       editorCallback: (editor) => this.handleCtrlL(editor),
     });
@@ -44,7 +44,7 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
   }
 
   onunload() {
-    this.typo = null;
+    this.nspell = null;
     this.tempIgnore.clear();
   }
 
@@ -59,11 +59,11 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
       const affData = await this.app.vault.adapter.read(affPath);
       const dicData = await this.app.vault.adapter.read(dicPath);
 
-      this.typo = new (Typo as any)(lang, affData, dicData, { platform: "any" });
+      this.nspell = new (nspell as any)(affData, dicData);
     } catch (e) {
       console.error(e);
       new Notice("Typo.js dictionary failed to load. Check settings & dict files.");
-      this.typo = null;
+      this.nspell = null;
     }
   }
 
@@ -86,11 +86,11 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
   }
 
   private isMisspelled(word: string): boolean {
-    if (!this.typo) return false;
+    if (!this.nspell) return false;
 	const clean = this.stripEdgePunct(word);
     if (!clean) return false;
     if (this.isCustom(clean) || this.isTempIgnored(clean)) return false;
-    return !this.typo.check(clean);
+    return !this.nspell.correct(clean);
   }
 
   private preserveCase(suggestion: string, original: string): string {
@@ -163,7 +163,7 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
       const { newFrom, newTo, cleaned } = this.trimSelectionToWord(editor, selectedText, from, to);
       if (cleaned && this.isMisspelled(cleaned)) {
         // Try to replace with first suggestion
-        const suggestions: string[] = this.typo?.suggest(this.stripEdgePunct(cleaned)) ?? [];
+        const suggestions: string[] = this.nspell?.suggest(this.stripEdgePunct(cleaned)) ?? [];
         if (suggestions.length > 0) {
           const s0 = this.preserveCase(suggestions[0], cleaned);
           // Replace and keep the suggestion selected
@@ -175,7 +175,7 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
             // @ts-ignore
             editor.scrollIntoView({ from: newFrom, to: after }, true);
           } catch (_) {}
-          return; // do not auto-advance; keep replacement selected per spec
+          return; // do not auto-advance; keep replacement selected
         } else {
           // No suggestions: add to temp ignore, then move to next misspelling
           const norm = this.normalizeForSet(cleaned);
@@ -193,7 +193,7 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
   }
 
   private selectFirstMisspellingInParagraph(editor: Editor) {
-    if (!this.typo) {
+    if (!this.nspell) {
       new Notice("Dictionary not loaded.");
       return;
     }
@@ -211,15 +211,15 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
     let match: RegExpExecArray | null;
     while ((match = wordRe.exec(paraText)) !== null) {
       const word = match[0];
-	  // Acronym
-	  if (word.toUpperCase() === word) continue;
-	  // Has numbers
-	  if (/\d/.test(word)) continue;
+      // Acronym
+      if (word.toUpperCase() === word) continue;
+      // Has numbers
+      if (/\d/.test(word)) continue;
 
       const norm = this.normalizeForSet(word);
       if (this.customSet.has(norm) || this.tempIgnore.has(norm)) continue;
 
-      const ok = this.typo.check(word);
+      const ok = this.nspell.check(word);
       if (!ok) {
         const from = offsetToPos(match.index);
         const to = offsetToPos(match.index + word.length);
