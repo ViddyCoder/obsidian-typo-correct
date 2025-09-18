@@ -87,7 +87,7 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
 
   private isMisspelled(word: string): boolean {
     if (!this.nspell) return false;
-	const clean = this.stripEdgePunct(word);
+    const clean = this.stripEdgePunct(word);
     if (!clean) return false;
     if (this.isCustom(clean) || this.isTempIgnored(clean)) return false;
     return !this.nspell.correct(clean);
@@ -165,20 +165,17 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
       // swap back to continue
       [arr[i], arr[i + 1]] = [arr[i + 1], arr[i]];
     }
-    
     return "";
   }
 
   private tryApostrophes(word: string): string {
     const arr = word.split("");
-
     for (let i = 1; i < word.length; i++) {
       const candidate = word.slice(0, i) + "'" + word.slice(i);
-      if (this.nspell.correct(candidate)) {
+      if (!this.isMisspelled(candidate)) {
         return candidate;
       }
     }
-
     return "";
   }
 
@@ -202,14 +199,16 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
         fix = this.tryApostrophes(cleaned);
         if (fix) suggestions.unshift(fix);
 
-
         if (suggestions.length === 0) {
           // Try to replace with first suggestion
           suggestions = this.nspell?.suggest(this.stripEdgePunct(cleaned)) ?? [];
         }
 
         if (suggestions.length > 0) {
-          const s0 = this.preserveCase(suggestions[0], cleaned);
+          let s0: string = suggestions[0];
+          if (s0.toLowerCase() !== cleaned.toLowerCase()) // Otherwise the suggestion is the same word but capitalized
+            s0 = this.preserveCase(suggestions[0], cleaned);
+
           // Replace and keep the suggestion selected
           editor.setSelection(newFrom, newTo);
           editor.replaceSelection(s0);
@@ -219,15 +218,16 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
             // @ts-ignore
             editor.scrollIntoView({ from: newFrom, to: after }, true);
           } catch (_) {}
-          return; // do not auto-advance; keep replacement selected
-        } else {
+          return; // Do not auto-advance; keep replacement selected
+        }
+        else {
           // No suggestions: add to temp ignore, then move to next misspelling
           const norm = this.normalizeForSet(cleaned);
           this.tempIgnore.add(norm);
           // new Notice(`No suggestions for "${cleaned}". Temporarily ignoring in this paragraph.`);
-          // fall through to "select next misspelling"
-		  editor.setSelection(to, to);
-		  return;
+          // Fall through to "select next misspelling"
+		      editor.setSelection(to, to);
+		      return;
         }
       }
     }
