@@ -1,4 +1,5 @@
-import { Plugin, Notice, Editor, EditorPosition, App, PluginSettingTab, Setting } from "obsidian";
+import { Plugin, Notice, Editor, EditorPosition, App, PluginSettingTab, Setting, Platform } from "obsidian";
+import { EditorView } from "@codemirror/view";
 const nspell = require("nspell");
 
 interface MisspellSettings {
@@ -31,7 +32,10 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
       id: "smart-misspelling-action",
       name: "Misspelling: select/replace/skip",
       hotkeys: [{ modifiers: ["Alt"], key: "j" }],
-      editorCallback: (editor) => this.handleCtrlL(editor),
+      editorCallback: (editor) => { 
+        this.handleCtrlL(editor);
+        this.scrollToPercent(editor);
+      }
     });
 
     // Ctrl+;: add selected word to custom dictionary
@@ -199,6 +203,22 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
     return suggestion ? suggestion : "";
   }
 
+  // --- Scrolling ---
+  private SCROLL_PERCENT = 0.25;
+
+  private scrollToPercent(editor: Editor) {
+    const view = (editor as any).cm as EditorView;
+    const cursor = editor.getCursor();
+    const offset = editor.posToOffset(cursor);
+    const rect  = view.scrollDOM.getBoundingClientRect();
+    let {top} = view.lineBlockAt(offset); // can return null
+    top = top + rect.top - rect.height * this.SCROLL_PERCENT;
+    setTimeout( ()=> {
+      if (Platform.isMobile) view.scrollDOM.scrollTo({ top });
+      else view.scrollDOM.scrollTo( { top, behavior: "smooth"});
+    }, 50);
+  }
+  
   // --- Core behaviors ---
 
   private async handleCtrlL(editor: Editor) {
@@ -212,7 +232,9 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
       if (cleaned && this.isMisspelled(cleaned)) {
         let suggestions: string[] = [];
         
-        let fix = this.trySwapFix(cleaned);
+        let fix: string;
+
+        fix = this.trySwapFix(cleaned);
         if (fix) suggestions.unshift(fix);
         
         fix = this.tryApostrophes(cleaned);
@@ -236,10 +258,10 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
           editor.replaceSelection(s0);
           const after: EditorPosition = { line: newFrom.line, ch: newFrom.ch + s0.length };
 		      editor.setSelection(newFrom, after);
-          try {
+/*           try {
             // @ts-ignore
             editor.scrollIntoView({ from: newFrom, to: after }, true);
-          } catch (_) {}
+          } catch (_) {} */
           return; // Do not auto-advance; keep replacement selected
         }
         else {
@@ -290,10 +312,11 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
         const from = offsetToPos(match.index);
         const to = offsetToPos(match.index + word.length);
         editor.setSelection(from, to);
-        try {
+/*         try {
           // @ts-ignore
           editor.scrollIntoView({ from, to }, true);
         } catch (_) {}
+ */
         return;
       }
     }
@@ -305,7 +328,7 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
 	let line = editor.getCursor().line;
 	editor.setSelection({ line: line, ch: lineText.length }, { line: line, ch: lineText.length });
   }
-
+  
   // --- Custom dictionary command (Ctrl+;) ---
 
   private async addSelectedToCustom(editor: Editor) {
