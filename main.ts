@@ -205,6 +205,15 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
   // --- Core behaviors ---
 
   private async handleCtrlL(editor: Editor) {
+
+    this.replaceMisspelledWithSuggestion(editor);
+
+    // Otherwise (or after ignoring), select the first misspelling in the paragraph
+    this.selectFirstMisspellingInParagraph(editor);
+  }
+
+  private replaceMisspelledWithSuggestion(editor: Editor) {
+
     // If there is a selected misspelled word, act on it
     const selectedText = editor.getSelection();
     const from: EditorPosition = (editor as any).getCursor?.("from") ?? editor.getCursor();
@@ -249,14 +258,11 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
           this.tempIgnore.add(norm);
           // new Notice(`No suggestions for "${cleaned}". Temporarily ignoring in this paragraph.`);
           // Fall through to "select next misspelling"
-		      editor.setSelection(to, to);
+		      editor.setSelection(from, to);
 		      return;
         }
       }
     }
-
-    // Otherwise (or after ignoring), select the first misspelling in the paragraph
-    this.selectFirstMisspellingInParagraph(editor);
   }
 
   private selectFirstMisspellingInParagraph(editor: Editor) {
@@ -291,6 +297,7 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
         const from = offsetToPos(match.index);
         const to = offsetToPos(match.index + word.length);
         editor.setSelection(from, to);
+        this.replaceMisspelledWithSuggestion(editor);
         return;
       }
     }
