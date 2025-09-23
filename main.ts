@@ -34,7 +34,6 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
       hotkeys: [{ modifiers: ["Alt"], key: "j" }],
       editorCallback: (editor) => { 
         this.handleCtrlL(editor);
-        this.scrollToPercent(editor);
       }
     });
 
@@ -324,9 +323,21 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
     // No misspellings remain in this paragraph -> clear temp ignore
     if (this.tempIgnore.size) this.tempIgnore.clear();
     // new Notice("No misspellings in paragraph 🎉");
-	let lineText = editor.getLine(editor.getCursor().line);
-	let line = editor.getCursor().line;
-	editor.setSelection({ line: line, ch: lineText.length }, { line: line, ch: lineText.length });
+    let lineText = editor.getLine(editor.getCursor().line);
+	  let line = editor.getCursor().line;
+	  editor.setSelection({ line: line, ch: lineText.length }, { line: line, ch: lineText.length });
+
+    this.formatTextIfAvailable();
+  }
+  formatTextIfAvailable() {
+    const targetPluginId = "obsidian-arc-writer";
+    const command = "arc-writer-format-paragraph"
+    // @ts-ignore
+    const cmd = app.commands.listCommands().find(c => c.id === targetPluginId + ":" + command);
+    if (cmd) {
+      // @ts-ignore
+      this.app.commands.executeCommandById(cmd.id);
+    }
   }
   
   // --- Custom dictionary command (Ctrl+;) ---
