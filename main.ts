@@ -201,22 +201,6 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
     let suggestion = this.customMap.get(word.toLowerCase());
     return suggestion ? suggestion : "";
   }
-
-  // --- Scrolling ---
-  private SCROLL_PERCENT = 0.25;
-
-  private scrollToPercent(editor: Editor) {
-    const view = (editor as any).cm as EditorView;
-    const cursor = editor.getCursor();
-    const offset = editor.posToOffset(cursor);
-    const rect  = view.scrollDOM.getBoundingClientRect();
-    let {top} = view.lineBlockAt(offset); // can return null
-    top = top + rect.top - rect.height * this.SCROLL_PERCENT;
-    setTimeout( ()=> {
-      if (Platform.isMobile) view.scrollDOM.scrollTo({ top });
-      else view.scrollDOM.scrollTo( { top, behavior: "smooth"});
-    }, 50);
-  }
   
   // --- Core behaviors ---
 
@@ -257,10 +241,6 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
           editor.replaceSelection(s0);
           const after: EditorPosition = { line: newFrom.line, ch: newFrom.ch + s0.length };
 		      editor.setSelection(newFrom, after);
-/*           try {
-            // @ts-ignore
-            editor.scrollIntoView({ from: newFrom, to: after }, true);
-          } catch (_) {} */
           return; // Do not auto-advance; keep replacement selected
         }
         else {
@@ -311,11 +291,6 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
         const from = offsetToPos(match.index);
         const to = offsetToPos(match.index + word.length);
         editor.setSelection(from, to);
-/*         try {
-          // @ts-ignore
-          editor.scrollIntoView({ from, to }, true);
-        } catch (_) {}
- */
         return;
       }
     }
