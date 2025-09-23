@@ -244,13 +244,21 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
 
         if (suggestions.length > 0) {
           let s0: string = suggestions[0];
-          if (s0.toLowerCase() !== cleaned.toLowerCase()) // Otherwise the suggestion is the same word but capitalized
-            s0 = this.preserveCase(suggestions[0], cleaned);
+
+          const onlyCapitalsNeeded = s0.toLowerCase() === cleaned.toLowerCase();
+
+          if (!onlyCapitalsNeeded) s0 = this.preserveCase(suggestions[0], cleaned);
 
           // Replace and keep the suggestion selected
           editor.setSelection(newFrom, newTo);
           editor.replaceSelection(s0);
           const after: EditorPosition = { line: newFrom.line, ch: newFrom.ch + s0.length };
+          if (onlyCapitalsNeeded) {
+            // Immediately proceed to the next misspelling.
+            this.selectFirstMisspellingInParagraph(editor);
+            return;
+          }
+
 		      editor.setSelection(newFrom, after);
           return; // Do not auto-advance; keep replacement selected
         }
