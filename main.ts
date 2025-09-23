@@ -124,7 +124,9 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
 
   private getParagraphBounds(editor: Editor): { start: number; end: number } | null {
     const cursorLine = editor.getCursor().line;
-    const lastLine = editor.lastLine();
+    return { start: cursorLine, end: cursorLine };
+
+/*     const lastLine = editor.lastLine();
 
     let start = cursorLine;
     while (start > 0 && editor.getLine(start).trim() !== "") start--;
@@ -135,7 +137,7 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
     end--;
 
     if (start > end || start < 0 || end > lastLine) return null;
-    return { start, end };
+    return { start, end }; */
   }
 
   private getParagraphData(editor: Editor, start: number, end: number) {
