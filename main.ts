@@ -17,8 +17,10 @@ const DEFAULT_SETTINGS: MisspellSettings = {
 export default class TypoFirstMisspellingPlugin extends Plugin {
   private nspell: any | null = null;
   public customSet: Set<string> = new Set();
+  public customReplacementSet: Set<string> = new Set();
+  public customReplacementMap: Map<string, string> = new Map();
   public customSetWithUppers: Set<string> = new Set();
-  public customMap: Map<string, string> = new Map();
+  public customCapitalsMap: Map<string, string> = new Map();
   private tempIgnore: Set<string> = new Set(); // cleared when paragraph has no remaining misspellings
   settings: MisspellSettings = { ...DEFAULT_SETTINGS };
 
@@ -81,9 +83,16 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
   }
 
   private reloadCustomSets() {
-    this.customSet = new Set(this.settings.customWords.filter(w => w === w.toLocaleLowerCase()));
-    this.customSetWithUppers = new Set(this.settings.customWords.filter(w => w !== w.toLocaleLowerCase()));
-    this.customMap = new Map(Array.from(this.customSetWithUppers, (w) => [w.toLowerCase(), w]));
+    this.customReplacementSet = new Set(this.settings.customWords.filter(w => w.contains(":")));
+    this.customReplacementMap = new Map(Array.from(this.customReplacementSet, (w) => {
+      const split = w.split(":");
+      return  [split[0], split[1]];
+    }));
+
+    let filteredSet = new Set(this.settings.customWords.filter(w => !this.customReplacementSet.has(w)));
+    this.customSet = new Set([...filteredSet].filter(w => w === w.toLocaleLowerCase()));
+    this.customSetWithUppers = new Set([...filteredSet].filter(w => !this.customReplacementSet.has(w) && w !== w.toLocaleLowerCase()));
+    this.customCapitalsMap = new Map(Array.from(this.customSetWithUppers, (w) => [w.toLowerCase(), w]));
   }
 
   // --- Helpers ---
@@ -164,8 +173,8 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
   }
 
   private trimSelectionToWord(editor: Editor, selText: string, from: EditorPosition, to: EditorPosition) {
-    const leading = selText.match(/^[^A-Za-z'-]+/)?.[0]?.length ?? 0;
-    const trailing = selText.match(/[^A-Za-z'-]+$/)?.[0]?.length ?? 0;
+    const leading = selText.match(/^[^A-Za-z'-:]+/)?.[0]?.length ?? 0;
+    const trailing = selText.match(/[^A-Za-z'-:]+$/)?.[0]?.length ?? 0;
     const newFrom: EditorPosition = { line: from.line, ch: from.ch + leading };
     const newTo: EditorPosition = { line: to.line, ch: to.ch - trailing };
     const cleaned = selText.slice(leading, selText.length - trailing);
@@ -201,7 +210,7 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
   }
 
   private tryCustomWordsWithUppers(word: string): string {
-    let suggestion = this.customMap.get(word.toLowerCase());
+    let suggestion = this.customCapitalsMap.get(word.toLowerCase());
     return suggestion ? suggestion : "";
   }
   
@@ -224,7 +233,7 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
 
     if (selectedText && selectedText.trim()) {
       const { newFrom, newTo, cleaned } = this.trimSelectionToWord(editor, selectedText, from, to);
-      if (cleaned && this.isMisspelled(cleaned)) {
+      if (cleaned && this.isMisspelled(cleaned) || this.customReplacementMap.get(cleaned)) {
         let suggestions: string[] = [];
         
         let fix: string;
@@ -238,6 +247,9 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
         fix = this.tryCustomWordsWithUppers(cleaned);
         if (fix) suggestions.unshift(fix);
 
+        fix = this.customReplacementMap.get(cleaned)?? "";
+        if (!!fix) suggestions.unshift(fix);
+
         if (suggestions.length === 0) {
           // Try to replace with first suggestion
           suggestions = this.nspell?.suggest(this.stripEdgePunct(cleaned)) ?? [];
@@ -247,8 +259,9 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
           let s0: string = suggestions[0];
 
           const onlyCapitalsNeeded = s0.toLowerCase() === cleaned.toLowerCase();
+          const hasReplacement = this.customReplacementMap.get(cleaned);
 
-          if (!onlyCapitalsNeeded) s0 = this.preserveCase(suggestions[0], cleaned);
+          if (!onlyCapitalsNeeded && !hasReplacement) s0 = this.preserveCase(suggestions[0], cleaned);
 
           // Replace and keep the suggestion selected
           editor.setSelection(newFrom, newTo);
@@ -304,7 +317,8 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
       if (this.customSet.has(norm) || this.customSetWithUppers.has(word) || this.tempIgnore.has(norm)) continue;
 
       const ok = this.nspell.correct(word);
-      if (!ok) {
+      const hasAutoReplacement = this.customReplacementMap.get(word);
+      if (!ok || hasAutoReplacement) {
         const from = offsetToPos(match.index);
         const to = offsetToPos(match.index + word.length);
         editor.setSelection(from, to);
