@@ -31,6 +31,7 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
     this.addCommand({
       id: "smart-misspelling-action",
       name: "Misspelling: select/replace/skip",
+			icon: 'paintbrush-2',
       hotkeys: [{ modifiers: ["Alt"], key: "j" }],
       editorCallback: (editor) => { 
         this.handleCtrlL(editor);
