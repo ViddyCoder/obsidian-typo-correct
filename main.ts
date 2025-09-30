@@ -17,10 +17,10 @@ const DEFAULT_SETTINGS: MisspellSettings = {
 export default class TypoFirstMisspellingPlugin extends Plugin {
   private nspell: any | null = null;
   public customSet: Set<string> = new Set();
-  public customReplacementSet: Set<string> = new Set();
   public customReplacementMap: Map<string, string> = new Map();
   public customSetWithUppers: Set<string> = new Set();
   public customCapitalsMap: Map<string, string> = new Map();
+  public customBannedWords: Set<string> = new Set();
   private tempIgnore: Set<string> = new Set(); // cleared when paragraph has no remaining misspellings
   settings: MisspellSettings = { ...DEFAULT_SETTINGS };
 
@@ -83,16 +83,26 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
   }
 
   private reloadCustomSets() {
-    this.customReplacementSet = new Set(this.settings.customWords.filter(w => w.contains(":")));
-    this.customReplacementMap = new Map(Array.from(this.customReplacementSet, (w) => {
-      const split = w.split(":");
-      return  [split[0], split[1]];
-    }));
+    this.customReplacementMap = new Map();
+    this.customBannedWords = new Set();
+    this.customSetWithUppers = new Set();
+    this.customCapitalsMap = new Map();
 
-    let filteredSet = new Set(this.settings.customWords.filter(w => !this.customReplacementSet.has(w)));
-    this.customSet = new Set([...filteredSet].filter(w => w === w.toLocaleLowerCase()));
-    this.customSetWithUppers = new Set([...filteredSet].filter(w => !this.customReplacementSet.has(w) && w !== w.toLocaleLowerCase()));
-    this.customCapitalsMap = new Map(Array.from(this.customSetWithUppers, (w) => [w.toLowerCase(), w]));
+    this.settings.customWords.forEach(w => {
+      if (w.contains(":")) {
+        const split = w.split(":");
+        this.customReplacementMap.set(split[0], split[1]);
+      }
+      else if (w.charAt(0) === "!") {
+        this.customBannedWords.add(w.substring(1,w.length));
+      }
+      else if (w !== w.toLocaleLowerCase()) {
+        this.customSetWithUppers.add(w);
+        this.customCapitalsMap.set(w.toLocaleLowerCase(), w);
+      }
+      else
+        this.customSet.add(w);
+    }); 
   }
 
   // --- Helpers ---
@@ -117,6 +127,7 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
     if (!this.nspell) return false;
     const clean = this.stripEdgePunct(word);
     if (!clean) return false;
+    if (this.customBannedWords.has(clean)) return true;
     if (this.isCustom(clean) || this.customSetWithUppers.has(word) || this.isTempIgnored(clean)) return false;
     return !this.nspell.correct(clean);
   }
@@ -253,6 +264,9 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
         if (suggestions.length === 0) {
           // Try to replace with first suggestion
           suggestions = this.nspell?.suggest(this.stripEdgePunct(cleaned)) ?? [];
+          while(this.customBannedWords.has(suggestions[0])) {
+            suggestions = suggestions.slice(1);
+          }
         }
 
         if (suggestions.length > 0) {
@@ -318,7 +332,7 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
 
       const ok = this.nspell.correct(word);
       const hasAutoReplacement = this.customReplacementMap.get(word);
-      if (!ok || hasAutoReplacement) {
+      if (!ok || hasAutoReplacement || this.customBannedWords.has(word)) {
         const from = offsetToPos(match.index);
         const to = offsetToPos(match.index + word.length);
         editor.setSelection(from, to);
@@ -357,23 +371,27 @@ export default class TypoFirstMisspellingPlugin extends Plugin {
     }
     const from: EditorPosition = (editor as any).getCursor?.("from") ?? editor.getCursor();
     const to: EditorPosition = (editor as any).getCursor?.("to") ?? editor.getCursor();
-    const { cleaned } = this.trimSelectionToWord(editor, sel, from, to);
+
+    let { cleaned } = this.trimSelectionToWord(editor, sel, from, to);
 
     const norm = this.normalizeForSet(cleaned);
     if (!norm) {
       new Notice("That selection doesn't look like a word.");
       return;
     }
-    if (this.customSet.has(norm) || this.customSetWithUppers.has(cleaned)) {
+    if (this.customSet.has(norm) || this.customSetWithUppers.has(cleaned) 
+      || this.customBannedWords.has(cleaned)) {
       new Notice(`"${cleaned}" is already in your custom dictionary.`);
       return;
     }
 
-    // this.customSet.add(norm);
-    this.settings.customWords.push(cleaned);
+    let toPush = cleaned;
+    if (sel.charAt(0) === "!") toPush = "!" + cleaned;
+    this.settings.customWords.push(toPush);
+
     this.reloadCustomSets();
     await this.saveSettings();
-    new Notice(`Added "${cleaned}" to custom dictionary.`);
+    new Notice(`Added "${toPush}" to custom dictionary.`);
   }
 
   private async removeSelectedFromCustom(editor: Editor) {
